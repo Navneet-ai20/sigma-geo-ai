@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Sigma GeoAI Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style> #map { height: 100vh; width: 100%; } </style>
+</head>
+<body class="bg-slate-950 text-white overflow-hidden">
+
+    <div id="auth-screen" class="fixed inset-0 bg-slate-950 z-[100] flex items-center justify-center">
+        <div class="bg-slate-900 p-8 rounded-2xl border border-slate-800 w-96 shadow-2xl">
+            <h1 class="text-2xl font-bold text-blue-500 mb-6 text-center underline decoration-blue-800">SIGMA GeoAI</h1>
+            
+            <div id="login-form">
+                <input id="u" type="text" placeholder="Username" class="w-full bg-slate-800 p-3 mb-3 rounded border border-slate-700 outline-none">
+                <input id="p" type="password" placeholder="Password" class="w-full bg-slate-800 p-3 mb-6 rounded border border-slate-700 outline-none">
+                <button onclick="doLogin()" class="w-full bg-blue-600 hover:bg-blue-700 p-3 rounded font-bold transition">Unlock Dashboard</button>
+                <p onclick="showReset(true)" class="text-xs text-center mt-4 text-slate-500 cursor-pointer hover:text-blue-400">Forgot Password?</p>
+            </div>
+
+            <div id="reset-form" class="hidden">
+                <input id="ru" type="text" placeholder="Username" class="w-full bg-slate-800 p-3 mb-2 rounded border border-slate-700">
+                <input id="rs" type="text" placeholder="Secret Key (engine)" class="w-full bg-slate-800 p-3 mb-2 rounded border border-slate-700">
+                <input id="rn" type="password" placeholder="New Password" class="w-full bg-slate-800 p-3 mb-6 rounded border border-slate-700">
+                <button onclick="doReset()" class="w-full bg-green-600 p-3 rounded font-bold">Update Password</button>
+                <p onclick="showReset(false)" class="text-xs text-center mt-4 text-slate-500 cursor-pointer">Back to Login</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="dash" class="flex h-screen hidden">
+        <div class="w-1/4 p-4 border-r border-slate-800 flex flex-col bg-slate-900 shadow-2xl">
+            <h2 class="font-bold text-blue-400 mb-1">SIGMA CONTROL</h2>
+            <p class="text-[10px] text-slate-500 mb-6 font-mono">STATUS: ENCRYPTED_SESSION_ACTIVE</p>
+            
+            <div class="space-y-2 mb-6">
+                <button onclick="runAnalysis('pop')" class="w-full text-left bg-slate-800 hover:bg-slate-700 p-2 rounded text-[11px] flex justify-between border border-slate-700/50">
+                    <span>POPULATION ANALYSIS</span> <span>→</span>
+                </button>
+                <button onclick="toggleSatellite()" class="w-full text-left bg-blue-900/20 hover:bg-blue-900/40 p-2 rounded text-[11px] flex justify-between border border-blue-500/30 text-blue-300">
+                    <span>SATELLITE VIEW</span> <span>🛰️</span>
+                </button>
+            </div>
+
+            <div id="chat" class="flex-grow text-[11px] overflow-auto bg-slate-950 p-3 rounded mb-4 border border-slate-800 font-mono text-blue-200">
+                <div class="text-slate-500 italic">// System Ready...</div>
+            </div>
+
+            <div class="flex gap-2 mb-4">
+                <input id="msg" type="text" class="bg-slate-800 p-2 rounded flex-grow text-xs outline-none" placeholder="Ask AI...">
+                <button onclick="doChat()" class="bg-blue-600 px-4 rounded hover:bg-blue-500 font-bold">↑</button>
+            </div>
+            
+            <button onclick="doPDF()" class="border border-blue-500/30 text-blue-400 p-2 rounded text-[10px] uppercase font-bold hover:bg-blue-500 hover:text-white transition">
+                Export Engineering Report
+            </button>
+        </div>
+        <div id="map" class="flex-grow"></div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const API = "http://127.0.0.1:8000";
+        var map = L.map('map').setView([20.59, 78.96], 5);
+        var streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        var satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
+        L.control.scale().addTo(map);
+
+        function showReset(s) {
+            document.getElementById('login-form').classList.toggle('hidden', s);
+            document.getElementById('reset-form').classList.toggle('hidden', !s);
+        }
+
+        async function doLogin() {
+            const u = document.getElementById('u').value;
+            const p = document.getElementById('p').value;
+            try {
+                const res = await fetch(`${API}/login`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({username: u, password: p})
+                });
+                if(res.ok) { 
+                    document.getElementById('auth-screen').classList.add('hidden');
+                    document.getElementById('dash').classList.remove('hidden');
+                    map.invalidateSize();
+                } else { alert("Access Denied: Wrong Credentials"); }
+            } catch(e) { alert("Error: Is your Python app.py running?"); }
+        }
+
+        async function doReset() {
+            const res = await fetch(`${API}/reset`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username: ru.value, secret: rs.value, new_password: rn.value})
+            });
+            if(res.ok) { alert("Password Updated Successfully"); showReset(false); } else { alert("Reset Failed"); }
+        }
+
+        async function doChat() {
+            const msgInput = document.getElementById('msg');
+            const chatBox = document.getElementById('chat');
+            const val = msgInput.value;
+            if(!val) return;
+
+            chatBox.innerHTML += `<div class="text-white mt-2"><b>You:</b> ${val}</div>`;
+            const res = await fetch(`${API}/chat`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({text: val})
+            });
+            const data = await res.json();
+            chatBox.innerHTML += `<div class="text-blue-400"><b>AI:</b> ${data.reply}</div>`;
+            chatBox.scrollTop = chatBox.scrollHeight;
+
+            if(val.toLowerCase().includes("pop")) {
+                var marker = L.marker([19.07, 72.87]).addTo(map).bindPopup("High Density Zone").openPopup();
+                map.flyTo([19.07, 72.87], 10);
+            }
+            msgInput.value = "";
+        }
+
+        function toggleSatellite() {
+            if(map.hasLayer(satelliteLayer)) { map.removeLayer(satelliteLayer); }
+            else { satelliteLayer.addTo(map); }
+        }
+
+        function runAnalysis(t) {
+            document.getElementById('msg').value = t === 'pop' ? "Analyze Population Density" : "Smooth Raster";
+            doChat();
+        }
+
+        async function doPDF() {
+            const chatText = document.getElementById('chat').innerText;
+            const res = await fetch(`${API}/report`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({content: chatText})
+            });
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = 'Sigma_Report.pdf'; a.click();
+        }
+    </script>
+</body>
+</html>
